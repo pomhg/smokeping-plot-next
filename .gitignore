@@ -1,0 +1,14 @@
+# build outputs
+/bin/
+/dist/
+/data/
+web/dist/*
+!web/dist/.gitkeep
+web/node_modules/
+
+# misc
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+.env

@@ -1,0 +1,26 @@
+services:
+  smokeping-plot-next:
+    build: .
+    image: smokeping-plot-next:latest
+    container_name: smokeping-plot-next
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    cap_add:
+      - NET_RAW
+    environment:
+      TZ: Asia/Shanghai
+      # Defaults for new targets (seconds between rounds / pings per round)
+      DEFAULT_STEP: "60"
+      DEFAULT_PINGS: "20"
+      # Delay between the pings of one round, and per-ping timeout
+      PING_INTERVAL: "500ms"
+      PING_TIMEOUT: "2s"
+      # Data retention
+      RAW_RETENTION_DAYS: "30"
+      ROLLUP_RETENTION_DAYS: "730"
+      # Optional HTTP basic auth for the UI/API
+      # AUTH_USER: admin
+      # AUTH_PASS: change-me
