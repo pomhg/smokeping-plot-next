@@ -29,8 +29,33 @@ interface Layout {
   log: boolean;
 }
 
-const SMOKE_RGB_LIGHT = '71,85,105';
-const SMOKE_RGB_DARK = '148,163,184';
+const INK_LIGHT = '30,30,30';
+const INK_DARK = '254,254,254';
+
+// 1-bit style dot texture for the plot background, cached per theme.
+const patternCache = new Map<string, CanvasPattern | null>();
+function dotPattern(ctx: CanvasRenderingContext2D, rgb: string, dpr: number): CanvasPattern | null {
+  const key = `${rgb}@${dpr}`;
+  if (patternCache.has(key)) return patternCache.get(key)!;
+  const size = 6;
+  const c = document.createElement('canvas');
+  c.width = size * dpr;
+  c.height = size * dpr;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.scale(dpr, dpr);
+  g.fillStyle = `rgba(${rgb},0.16)`;
+  g.fillRect(0, 0, 1, 1);
+  const pat = ctx.createPattern(c, 'repeat');
+  if (pat) {
+    const m = new DOMMatrix();
+    m.a = 1 / dpr;
+    m.d = 1 / dpr;
+    pat.setTransform(m);
+  }
+  patternCache.set(key, pat);
+  return pat;
+}
 
 function niceCeil(v: number): number {
   if (v <= 0) return 1;
@@ -119,13 +144,23 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     const lossH = compact ? 4 : 6;
     const xAxisH = compact ? 0 : 20;
     const bottom = height - xAxisH - lossH - 2;
-    let maxV = 0;
+    // Y range: the smoke's 98th percentile of per-bucket maxima (so one
+    // stray 2 s spike does not flatten a 60 ms line) but never less than
+    // 1.5x the busiest inter-quartile band. Anything above is clipped.
+    const highs: number[] = [];
+    let bandMax = 0;
     let minV = Infinity;
     for (const p of points) {
-      const hi = compact ? (p.p75 ?? p.median) : p.max;
-      if (hi !== null && hi !== undefined && hi > maxV) maxV = hi;
+      const hi = compact ? p.p75 ?? p.median : p.max;
+      if (hi !== null && hi !== undefined) highs.push(hi);
+      const band = p.p75 ?? p.median;
+      if (band !== null && band !== undefined && band > bandMax) bandMax = band;
       if (p.min !== null && p.min < minV) minV = p.min;
     }
+    highs.sort((a, b) => a - b);
+    let maxV = highs.length ? highs[Math.min(highs.length - 1, Math.floor(highs.length * 0.98))] : 0;
+    if (!compact) maxV = Math.max(maxV, bandMax * 1.5);
+    if (highs.length && logScale) maxV = highs[highs.length - 1];
     if (!Number.isFinite(minV)) minV = 0.1;
     if (maxV <= 0) maxV = 1;
     const log = logScale && !compact;
@@ -168,18 +203,29 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     ctx.clearRect(0, 0, width, height);
 
     const dark = theme === 'dark';
-    const gridColor = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
-    const axisText = dark ? '#9aa4b2' : '#6b7280';
-    const smokeRGB = dark ? SMOKE_RGB_DARK : SMOKE_RGB_LIGHT;
+    const ink = dark ? INK_DARK : INK_LIGHT;
+    const gridColor = `rgba(${ink},0.22)`;
+    const axisText = `rgba(${ink},0.7)`;
+    const smokeRGB = ink;
     const { left, top, bottom, lossH, plotW, plotH } = layout;
     const gap = bucket * 1.5;
 
+    // plot background: paper + dot texture + frame
+    ctx.fillStyle = dark ? '#121212' : '#fefefe';
+    ctx.fillRect(left, top, plotW, plotH);
+    const pat = dotPattern(ctx, ink, dpr);
+    if (pat) {
+      ctx.fillStyle = pat;
+      ctx.fillRect(left, top, plotW, plotH);
+    }
+
     // grid + y axis
-    ctx.font = `${compact ? 10 : 11}px system-ui, -apple-system, sans-serif`;
+    ctx.font = `${compact ? 9 : 10.5}px "JetBrains Mono", ui-monospace, Menlo, monospace`;
     ctx.textBaseline = 'middle';
     const yt = layout.log ? logTicks(layout.yMin, layout.yMax) : linearTicks(layout.yMax, compact ? 3 : 5);
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
+    ctx.setLineDash([1, 3]);
     ctx.fillStyle = axisText;
     ctx.textAlign = 'right';
     for (const v of yt) {
@@ -202,13 +248,10 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
       ctx.stroke();
       if (!compact) ctx.fillText(label, x, bottom + lossH + 6);
     }
-    if (!compact) {
-      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)';
-      ctx.beginPath();
-      ctx.moveTo(left + 0.5, top);
-      ctx.lineTo(left + 0.5, bottom + lossH + 2);
-      ctx.stroke();
-    }
+    ctx.setLineDash([]);
+    // frame around the plot
+    ctx.strokeStyle = `rgb(${ink})`;
+    ctx.strokeRect(left + 0.5, top + 0.5, plotW - 1, plotH - 1);
 
     // clip to plot for data
     ctx.save();
@@ -276,7 +319,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
       const y = yOf(p.median);
       const prev = i > 0 ? points[i - 1] : null;
       if (prev && prev.median !== null && p.ts - prev.ts <= gap) {
-        ctx.strokeStyle = lossColor(Math.max(p.loss, prev.loss));
+        ctx.strokeStyle = lossColor(Math.max(p.loss, prev.loss), dark);
         ctx.beginPath();
         ctx.moveTo(xOf(prev.ts + bucket / 2), yOf(prev.median));
         ctx.lineTo(x, y);
@@ -284,10 +327,9 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
       } else {
         const next = points[i + 1];
         if (!next || next.median === null || next.ts - p.ts > gap) {
-          ctx.fillStyle = lossColor(p.loss);
-          ctx.beginPath();
-          ctx.arc(x, y, compact ? 1.5 : 2, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.fillStyle = lossColor(p.loss, dark);
+          const r = compact ? 1.5 : 2;
+          ctx.fillRect(x - r, y - r, r * 2, r * 2);
         }
       }
     }
@@ -298,7 +340,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
       if (p.loss <= 0) continue;
       const x0 = xOf(p.ts);
       const w = Math.max(1, xOf(p.ts + bucket) - x0);
-      ctx.fillStyle = lossColor(p.loss);
+      ctx.fillStyle = lossColor(p.loss, dark);
       ctx.globalAlpha = p.loss >= 100 ? 1 : 0.45 + (p.loss / 100) * 0.55;
       ctx.fillRect(x0, bottom + 2, w, lossH);
     }
@@ -308,9 +350,9 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     if (drag) {
       const a = Math.min(drag.x0, drag.x1);
       const b = Math.max(drag.x0, drag.x1);
-      ctx.fillStyle = dark ? 'rgba(96,165,250,0.18)' : 'rgba(37,99,235,0.12)';
+      ctx.fillStyle = 'rgba(243,134,161,0.28)';
       ctx.fillRect(a, top, b - a, plotH);
-      ctx.strokeStyle = dark ? 'rgba(96,165,250,0.7)' : 'rgba(37,99,235,0.6)';
+      ctx.strokeStyle = `rgb(${ink})`;
       ctx.beginPath();
       ctx.moveTo(a + 0.5, top);
       ctx.lineTo(a + 0.5, bottom);
@@ -323,21 +365,18 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     if (hoverIdx !== null && points[hoverIdx]) {
       const p = points[hoverIdx];
       const x = Math.round(xOf(p.ts + bucket / 2)) + 0.5;
-      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
-      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = `rgb(${ink})`;
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x, top);
       ctx.lineTo(x, bottom + lossH + 2);
       ctx.stroke();
-      ctx.setLineDash([]);
       if (p.median !== null) {
-        ctx.fillStyle = lossColor(p.loss);
-        ctx.strokeStyle = dark ? '#0f1217' : '#fff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(x, yOf(p.median), 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        const y = yOf(p.median);
+        ctx.fillStyle = dark ? '#121212' : '#fefefe';
+        ctx.fillRect(x - 4, y - 4, 8, 8);
+        ctx.fillStyle = lossColor(p.loss, dark);
+        ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
       }
     }
   }, [points, width, height, layout, from, to, bucket, compact, theme, hoverIdx, drag, xOf, yOf]);
@@ -403,6 +442,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
   };
 
   const hp = hoverIdx !== null ? points[hoverIdx] : null;
+  const dark = theme === 'dark';
   const tipLeft = hoverX > width / 2;
 
   return (
@@ -425,7 +465,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
             {bucket >= 86400 ? fmtDateTime(hp.ts) : `${fmtDateTime(hp.ts)}${bucket > 60 ? ` – ${fmtTime(hp.ts + bucket)}` : ''}`}
           </div>
           <div className="smoke-tip-row">
-            <span className="dot" style={{ background: lossColor(hp.loss) }} />
+            <span className="dot" style={{ background: lossColor(hp.loss, dark) }} />
             {t('median')}: <b>{fmtMs(hp.median)}</b>
           </div>
           {!compact && hp.p25 !== null && (
@@ -437,7 +477,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
             {t('min')}/{t('max')}: {fmtMs(hp.min)} / {fmtMs(hp.max)}
           </div>
           <div className="smoke-tip-row">
-            {t('loss')}: <b style={{ color: hp.loss > 0 ? lossColor(hp.loss) : undefined }}>{fmtLoss(hp.loss)}</b>
+            {t('loss')}: <b style={{ color: hp.loss > 0 ? lossColor(hp.loss, dark) : undefined }}>{fmtLoss(hp.loss)}</b>
             <span className="muted"> ({hp.recv}/{hp.sent})</span>
           </div>
         </div>

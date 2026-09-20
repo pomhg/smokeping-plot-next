@@ -56,21 +56,26 @@ export function fmtDuration(sec: number, lang: Lang): string {
   return lang === 'zh' ? '0 秒' : '0s';
 }
 
-/** Loss → colour, in the spirit of smokeping's median-line legend. */
-export function lossColor(loss: number): string {
-  if (loss <= 0) return '#16a34a';
-  if (loss <= 5) return '#0ea5e9';
-  if (loss <= 10) return '#2563eb';
-  if (loss <= 25) return '#7c3aed';
-  if (loss <= 50) return '#c026d3';
-  return '#dc2626';
+/** Loss → colour. Monochrome-first palette: 0 % is ink, escalating through
+ *  classic link-blue, purple, magenta and red as packets go missing. */
+const LOSS_LIGHT = ['#1e1e1e', '#0000ee', '#7a00d6', '#c400a8', '#f0007a', '#e40000'];
+const LOSS_DARK = ['#fefefe', '#7d9bff', '#b48cff', '#ea8cff', '#ff7cb8', '#ff5555'];
+
+function lossIndex(loss: number): number {
+  if (loss <= 0) return 0;
+  if (loss <= 5) return 1;
+  if (loss <= 10) return 2;
+  if (loss <= 25) return 3;
+  if (loss <= 50) return 4;
+  return 5;
 }
 
-export const lossLegend: { label: string; color: string }[] = [
-  { label: '0%', color: lossColor(0) },
-  { label: '≤5%', color: lossColor(5) },
-  { label: '≤10%', color: lossColor(10) },
-  { label: '≤25%', color: lossColor(25) },
-  { label: '≤50%', color: lossColor(50) },
-  { label: '>50%', color: lossColor(100) },
-];
+export function lossColor(loss: number, dark = false): string {
+  return (dark ? LOSS_DARK : LOSS_LIGHT)[lossIndex(loss)];
+}
+
+export const LOSS_LABELS = ['0%', '≤5%', '≤10%', '≤25%', '≤50%', '>50%'];
+
+export function lossLegend(dark: boolean): { label: string; color: string }[] {
+  return LOSS_LABELS.map((label, i) => ({ label, color: (dark ? LOSS_DARK : LOSS_LIGHT)[i] }));
+}

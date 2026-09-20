@@ -4,7 +4,6 @@ package probe
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
+	"golang.org/x/net/icmp"
 )
 
 // Result of one probe round. RTTs holds only the successful replies, in ms.
@@ -105,7 +105,9 @@ func tcpRound(ctx context.Context, req Request, opt Options) Result {
 }
 
 // DetectPrivileged decides whether raw ICMP sockets are usable. mode is one
-// of "auto", "true", "false".
+// of "auto", "true", "false". Detection only checks that the socket can be
+// opened – it deliberately does not rely on a reply from loopback, which
+// firewalls may swallow even when probing real hosts works fine.
 func DetectPrivileged(mode string) bool {
 	switch strings.ToLower(mode) {
 	case "true", "1", "yes":
@@ -114,31 +116,28 @@ func DetectPrivileged(mode string) bool {
 		return false
 	}
 	for _, priv := range []bool{true, false} {
-		if selfTest(priv) == nil {
+		if err := canOpenICMP(priv); err == nil {
 			slog.Info("icmp socket mode selected", "privileged", priv)
 			return priv
+		} else {
+			slog.Debug("icmp socket mode unavailable", "privileged", priv, "err", err)
 		}
 	}
-	slog.Warn("no working ICMP socket mode found; ICMP probes will fail. " +
+	slog.Warn("no usable ICMP socket; ICMP probes will fail. " +
 		"Run as root / with CAP_NET_RAW, or set net.ipv4.ping_group_range on Linux.")
 	return true
 }
 
-func selfTest(priv bool) error {
-	p, err := probing.NewPinger("127.0.0.1")
+func canOpenICMP(priv bool) error {
+	network := "udp4"
+	if priv {
+		network = "ip4:icmp"
+	}
+	c, err := icmp.ListenPacket(network, "")
 	if err != nil {
 		return err
 	}
-	p.Count = 1
-	p.Timeout = time.Second
-	p.SetPrivileged(priv)
-	if err := p.Run(); err != nil {
-		return err
-	}
-	if p.Statistics().PacketsRecv == 0 {
-		return fmt.Errorf("no reply from loopback")
-	}
-	return nil
+	return c.Close()
 }
 
 func trimErr(err error) string {

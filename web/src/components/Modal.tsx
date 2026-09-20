@@ -21,10 +21,11 @@ export function Modal({ title, onClose, children, footer }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="close">
+      <div className="win modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <div className="win-bar">
+          <span className="win-title">{title}</span>
+          <span className="spacer" />
+          <button className="win-close" onClick={onClose} aria-label="close">
             ✕
           </button>
         </div>

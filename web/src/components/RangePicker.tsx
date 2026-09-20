@@ -11,32 +11,26 @@ export const RANGES: { key: string; sec: number }[] = [
   { key: '1y', sec: 365 * 86400 },
 ];
 
-export function rangeLabel(key: string, lang: string): string {
-  if (lang !== 'zh') return key;
-  const n = key.slice(0, -1);
-  const u = key.slice(-1);
-  return `${n}${{ h: '小时', d: '天', y: '年' }[u] ?? u}`;
-}
-
 interface Props {
   value: string | null; // preset key, or null when zoomed to a custom window
   onChange: (key: string) => void;
   options?: { key: string; sec: number }[];
+  label?: string;
 }
 
-export function RangePicker({ value, onChange, options = RANGES }: Props) {
-  const { lang } = useI18n();
+export function RangePicker({ value, onChange, options = RANGES, label }: Props) {
+  const { t } = useI18n();
   return (
-    <div className="chips" role="tablist">
+    <div className="seg" role="tablist" aria-label={label ?? t('range')}>
       {options.map((r) => (
         <button
           key={r.key}
           role="tab"
           aria-selected={value === r.key}
-          className={`chip${value === r.key ? ' active' : ''}`}
+          className={`seg-btn${value === r.key ? ' active' : ''}`}
           onClick={() => onChange(r.key)}
         >
-          {rangeLabel(r.key, lang)}
+          {r.key}
         </button>
       ))}
     </div>

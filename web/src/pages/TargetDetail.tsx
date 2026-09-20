@@ -3,11 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type TargetView } from '../api';
 import { useI18n } from '../i18n';
+import { useTheme } from '../theme';
 import { fmtDateTime, fmtDuration, fmtLoss, fmtMs, lossColor, lossLegend } from '../format';
 import { SmokeChart } from '../components/SmokeChart';
 import { RANGES, RangePicker } from '../components/RangePicker';
 import { Modal } from '../components/Modal';
-import { statusOf } from '../components/TargetCard';
+import { CropMarks } from '../components/CropMarks';
+import { statusColor, statusOf } from '../components/TargetCard';
 
 interface Props {
   targets: TargetView[];
@@ -19,6 +21,8 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
   const { id } = useParams();
   const target = targets.find((x) => String(x.id) === id);
   const { t, lang } = useI18n();
+  const { resolved } = useTheme();
+  const dark = resolved === 'dark';
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -120,11 +124,16 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
 
   if (!target) {
     return (
-      <div className="empty">
-        <h2>{t('notFound')}</h2>
-        <Link to="/" className="btn">
-          ← {t('back')}
-        </Link>
+      <div className="empty win">
+        <div className="win-bar">
+          <span className="win-title">404</span>
+        </div>
+        <div className="win-body empty-body">
+          <h2 className="display">{t('notFound')}</h2>
+          <Link to="/" className="btn">
+            ← {t('back')}
+          </Link>
+        </div>
       </div>
     );
   }
@@ -133,21 +142,25 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
   const last = target.last;
   const ageSec = last ? Math.max(0, now - last.ts) : null;
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const legend = lossLegend(dark);
 
   return (
     <div className="detail">
       <div className="detail-head">
-        <Link to="/" className="icon-btn back" aria-label={t('back')}>
+        <CropMarks />
+        <Link to="/" className="btn ghost back" aria-label={t('back')}>
           ←
         </Link>
-        <span className="status-dot lg" style={{ background: st.color }} />
         <div className="detail-title">
-          <h1>{target.name}</h1>
-          <div className="muted sub">
+          <div className="meta">
+            <span className={`led st-${st}`} style={{ background: statusColor(target, dark) }} />
+            {target.group || t('ungrouped')} / {target.probe.toUpperCase()}
+            {target.probe === 'tcp' ? `:${target.port}` : ''} · {t('every', { step: target.step, pings: target.pings })}
+            {!target.enabled && <> · {t('paused').toUpperCase()}</>}
+          </div>
+          <h1 className="display">{target.name}</h1>
+          <div className="meta">
             {target.host}
-            {target.probe === 'tcp' ? `:${target.port}` : ''} · {target.probe.toUpperCase()} · {t('every', { step: target.step, pings: target.pings })}
-            {target.group && <> · {target.group}</>}
-            {!target.enabled && <> · {t('paused')}</>}
             {ageSec !== null && (
               <>
                 {' '}
@@ -159,69 +172,75 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
         <span className="spacer" />
         <div className="actions">
           <button className="btn" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
-            {target.enabled ? '⏸ ' + t('disabled') : '▶ ' + t('enabled')}
+            {target.enabled ? t('disabled') : t('enabled')}
           </button>
           <button className="btn" onClick={() => onEdit(target)}>
-            ✎ {t('editTarget')}
+            {t('editTarget')}
           </button>
           <button className="btn danger" onClick={() => setConfirmDel(true)}>
-            🗑 {t('delete')}
+            {t('delete')}
           </button>
         </div>
       </div>
 
       <div className="stats-row">
-        <Stat label={t('median')} value={last && last.recv > 0 ? fmtMs(last.median) : last ? t('unreachable') : '—'} color={last && last.recv === 0 ? lossColor(100) : undefined} />
-        <Stat label={t('loss')} value={last ? fmtLoss(last.loss) : '—'} color={last && last.loss > 0 ? lossColor(last.loss) : undefined} />
+        <Stat label={t('median')} value={last && last.recv > 0 ? fmtMs(last.median) : last ? t('unreachable') : '—'} sub="NOW" color={last && last.recv === 0 ? lossColor(100, dark) : undefined} />
+        <Stat label={t('loss')} value={last ? fmtLoss(last.loss) : '—'} sub="NOW" color={last && last.loss > 0 ? lossColor(last.loss, dark) : undefined} />
         <Stat label={`${t('avg')} ${t('median')}`} value={fmtMs(stats.median)} sub={t('range')} />
         <Stat label={`${t('min')} / ${t('max')}`} value={`${fmtMs(stats.min)} / ${fmtMs(stats.max)}`} sub={t('range')} />
-        <Stat label={`${t('loss')}`} value={fmtLoss(stats.loss)} sub={`${t('range')} · ${stats.recv}/${stats.sent}`} color={stats.loss && stats.loss > 0 ? lossColor(stats.loss) : undefined} />
+        <Stat label={t('loss')} value={fmtLoss(stats.loss)} sub={`${t('range')} · ${stats.recv}/${stats.sent}`} color={stats.loss && stats.loss > 0 ? lossColor(stats.loss, dark) : undefined} />
         <Stat label={t('availability')} value={stats.availability === null ? '—' : `${stats.availability.toFixed(stats.availability === 100 ? 0 : 2)}%`} sub={t('range')} />
       </div>
 
-      <div className="card chart-card">
-        <div className="chart-toolbar">
-          <RangePicker value={presetKey} onChange={setPreset} />
+      <div className="win chart-win">
+        <div className="win-bar">
+          <span className="win-title">SMOKE · {target.name}</span>
           <span className="spacer" />
-          {!live && (
-            <button className="btn small" onClick={() => setPreset('3h')}>
-              ⟲ {t('reset')}
-            </button>
-          )}
-          <label className="toggle">
-            <input type="checkbox" checked={logScale} onChange={(e) => setLogScale(e.target.checked)} />
-            <span>{t('logScale')}</span>
-          </label>
-        </div>
-        {!live && (
-          <div className="muted range-label">
-            {fmtDateTime(from)} → {fmtDateTime(to)}
-          </div>
-        )}
-        <div className={`chart-wrap${isLoading ? ' loading' : ''}`}>
-          {series ? (
-            <SmokeChart points={series.points} from={from} to={to} bucket={series.bucket} height={isMobile ? 260 : 360} logScale={logScale} onZoom={zoomTo} />
-          ) : (
-            <div className="chart-placeholder" style={{ height: isMobile ? 260 : 360 }} />
-          )}
-          {series && series.points.length === 0 && <div className="chart-empty muted">{t('noData')}</div>}
-        </div>
-        <div className="legend">
-          <span className="legend-title">{t('lossLegend')}:</span>
-          {lossLegend.map((l) => (
-            <span key={l.label} className="legend-item">
-              <span className="legend-swatch" style={{ background: l.color }} />
-              {l.label}
-            </span>
-          ))}
-          <span className="legend-smoke muted">{t('smokeLegend')}</span>
           {series && (
-            <span className="muted legend-meta">
-              {series.source} · {fmtDuration(series.bucket, lang)}/pt · {series.points.length} pts
+            <span className="win-meta">
+              {series.source} · {fmtDuration(series.bucket, lang)}/pt · {series.points.length}pts
             </span>
           )}
         </div>
-        <div className="muted hint">{t('zoomHint')}</div>
+        <div className="win-body">
+          <div className="chart-toolbar">
+            <RangePicker value={presetKey} onChange={setPreset} />
+            <span className="spacer" />
+            {!live && (
+              <button className="btn small" onClick={() => setPreset('3h')}>
+                {t('reset')}
+              </button>
+            )}
+            <label className="toggle">
+              <input type="checkbox" checked={logScale} onChange={(e) => setLogScale(e.target.checked)} />
+              <span>{t('logScale')}</span>
+            </label>
+          </div>
+          {!live && (
+            <div className="meta range-label">
+              {fmtDateTime(from)} → {fmtDateTime(to)}
+            </div>
+          )}
+          <div className={`chart-wrap${isLoading ? ' loading' : ''}`}>
+            {series ? (
+              <SmokeChart points={series.points} from={from} to={to} bucket={series.bucket} height={isMobile ? 260 : 380} logScale={logScale} onZoom={zoomTo} />
+            ) : (
+              <div className="chart-placeholder" style={{ height: isMobile ? 260 : 380 }} />
+            )}
+            {series && series.points.length === 0 && <div className="chart-empty muted">{t('noData')}</div>}
+          </div>
+          <div className="legend">
+            <span className="meta">{t('lossLegend')}:</span>
+            {legend.map((l) => (
+              <span key={l.label} className="legend-item">
+                <span className="legend-swatch" style={{ background: l.color }} />
+                {l.label}
+              </span>
+            ))}
+            <span className="meta legend-smoke">{t('smokeLegend')}</span>
+          </div>
+          <div className="meta hint">{t('zoomHint')}</div>
+        </div>
       </div>
 
       {confirmDel && (
@@ -251,11 +270,11 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
 function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="stat">
-      <div className="stat-label muted">{label}</div>
-      <div className="stat-value" style={{ color }}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value display" style={{ color }}>
         {value}
       </div>
-      {sub && <div className="stat-sub muted">{sub}</div>}
+      {sub && <div className="stat-sub">{sub}</div>}
     </div>
   );
 }

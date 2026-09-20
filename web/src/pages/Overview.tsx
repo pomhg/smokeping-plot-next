@@ -4,6 +4,7 @@ import { api, type TargetView } from '../api';
 import { useI18n } from '../i18n';
 import { TargetCard } from '../components/TargetCard';
 import { RangePicker } from '../components/RangePicker';
+import { CropMarks } from '../components/CropMarks';
 
 const OVERVIEW_RANGES = [
   { key: '1h', sec: 3600 },
@@ -77,13 +78,17 @@ export function Overview({ targets, onAdd }: Props) {
 
   if (targets.length === 0) {
     return (
-      <div className="empty">
-        <div className="empty-art">📡</div>
-        <h2>{t('noTargets')}</h2>
-        <p className="muted">{t('noTargetsHint')}</p>
-        <button className="btn primary" onClick={() => onAdd()}>
-          + {t('addTarget')}
-        </button>
+      <div className="empty win">
+        <div className="win-bar">
+          <span className="win-title">{t('overview')}</span>
+        </div>
+        <div className="win-body empty-body">
+          <h2 className="display">{t('noTargets')}</h2>
+          <p className="muted">{t('noTargetsHint')}</p>
+          <button className="btn primary" onClick={() => onAdd()}>
+            + {t('addTarget')}
+          </button>
+        </div>
       </div>
     );
   }
@@ -91,17 +96,20 @@ export function Overview({ targets, onAdd }: Props) {
   return (
     <div className="overview">
       <div className="toolbar">
-        <input className="search" type="search" placeholder={t('search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+        <label className="search-wrap">
+          <span className="search-prompt">&gt;</span>
+          <input className="search" type="search" placeholder={t('search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
         <RangePicker value={range.key} onChange={setRangeKey} options={OVERVIEW_RANGES} />
       </div>
       {groups.length > 1 && (
-        <div className="chips group-chips">
-          <button className={`chip${groupFilter === null ? ' active' : ''}`} onClick={() => setGroupFilter(null)}>
-            {t('allGroups')} <span className="count">{targets.length}</span>
+        <div className="seg group-seg">
+          <button className={`seg-btn${groupFilter === null ? ' active' : ''}`} onClick={() => setGroupFilter(null)}>
+            {t('allGroups')} <span className="count">[{targets.length}]</span>
           </button>
           {groups.map((g) => (
-            <button key={g} className={`chip${groupFilter === g ? ' active' : ''}`} onClick={() => setGroupFilter(groupFilter === g ? null : g)}>
-              {g} <span className="count">{targets.filter((x) => x.group === g).length}</span>
+            <button key={g} className={`seg-btn${groupFilter === g ? ' active' : ''}`} onClick={() => setGroupFilter(groupFilter === g ? null : g)}>
+              {g} <span className="count">[{targets.filter((x) => x.group === g).length}]</span>
             </button>
           ))}
         </div>
@@ -110,11 +118,12 @@ export function Overview({ targets, onAdd }: Props) {
       {sections.map(([g, list]) => (
         <section key={g || '__none'} className="group">
           <div className="group-head">
-            <h2>{g || t('ungrouped')}</h2>
-            <span className="muted">{t('targetsCount', { n: list.length })}</span>
+            <CropMarks />
+            <h2 className="display">{g || t('ungrouped')}</h2>
+            <span className="meta">{t('targetsCount', { n: list.length })}</span>
             <span className="spacer" />
             <button className="link-btn" onClick={() => onAdd(g)}>
-              + {t('addTarget')}
+              [+] {t('addTarget')}
             </button>
           </div>
           <div className="grid">
