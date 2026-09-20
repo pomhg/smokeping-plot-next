@@ -21,7 +21,47 @@ REST + SSE), React web UI with smoke graphs, responsive for desktop and mobile.*
 
 ## 快速开始
 
-### Docker Compose（推荐）
+三种部署方式，任选其一。服务默认监听 `:8080`（所有网卡），局域网内其他机器直接访问 `http://<监测机IP>:8080`。
+
+### 方式一：systemd 一键安装（Linux，推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pomhg/smokeping-plot-next/main/deploy/install.sh | sudo bash
+```
+
+或从 Release 下载对应架构的 tar.gz 解压后运行 `sudo ./deploy/install.sh`。脚本会：
+
+- 安装二进制到 `/usr/local/bin`，配置写到 `/etc/smokeping-plot-next/env`，数据在 `/var/lib/smokeping-plot-next`
+- 安装并启动系统级 systemd 服务，开机自启；服务以**非 root 动态用户**运行，通过 `CAP_NET_RAW` 发 ICMP
+- 打印访问地址和防火墙放行命令
+
+**没有 root 权限？** 用 `--user` 装成当前用户的服务（`systemctl --user` 管理，`loginctl enable-linger` 保证登出后继续运行）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pomhg/smokeping-plot-next/main/deploy/install.sh | bash -s -- --user
+```
+
+ICMP 需要原始套接字；用户模式下脚本会尝试 `sudo setcap cap_net_raw+ep` 给二进制授权（只需一次）。没有 sudo 时请管理员执行以下任一命令：
+
+```bash
+sudo setcap cap_net_raw+ep ~/.local/bin/smokeping-plot-next
+sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+```
+
+常用管理命令（用户模式把 `sudo systemctl` 换成 `systemctl --user`，`journalctl` 加 `--user`）：
+
+```bash
+sudo systemctl status smokeping-plot-next
+sudo systemctl restart smokeping-plot-next
+sudo journalctl -u smokeping-plot-next -f
+sudo nano /etc/smokeping-plot-next/env      # 改端口、保留期、Basic Auth 等，改完 restart
+```
+
+升级：重新运行同一条安装命令即可（保留数据和配置）。卸载：`./deploy/install.sh --uninstall [--user]`。
+
+同一个脚本的其他参数：`--port 80`（配合 `CAP_NET_BIND_SERVICE` 可直接用 80 端口）、`--version v0.2.0`、`--binary ./bin/smokeping-plot-next`（用本地编译的二进制）。仓库为私有时设置 `GITHUB_TOKEN` 环境变量再运行。
+
+### 方式二：Docker Compose
 
 ```bash
 git clone https://github.com/pomhg/smokeping-plot-next.git
@@ -29,30 +69,33 @@ cd smokeping-plot-next
 docker compose up -d --build
 ```
 
-浏览器打开 `http://<监测机IP>:8080`，点击右上角「添加节点」。数据保存在 `./data/`。
+数据保存在 `./data/`。compose 文件已加 `cap_add: NET_RAW`。
 
-### 直接运行二进制
+### 方式三：本地编译
 
 需要 Go ≥ 1.23 与 Node ≥ 20：
 
 ```bash
-make build            # 构建前端并编译到 bin/smokeping-plot-next
-./bin/smokeping-plot-next
+make build                 # 构建前端并编译到 bin/smokeping-plot-next
+./bin/smokeping-plot-next  # 前台运行，或
+make install               # = 编译 + sudo ./deploy/install.sh（systemd 系统服务）
+make install-user          # = 编译 + ./deploy/install.sh --user
 ```
 
-ICMP 需要原始套接字权限。Linux 下三选一：
+裸跑二进制时 ICMP 权限同上（root / setcap / ping_group_range）。macOS 上非特权 ICMP 开箱即用。程序启动时自动检测可用的套接字模式（`PROBE_PRIVILEGED=auto`）。
+
+### 防火墙放行
 
 ```bash
-sudo ./bin/smokeping-plot-next                                    # root
-sudo setcap cap_net_raw+ep bin/smokeping-plot-next                # 或授予 capability
-sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"           # 或允许非特权 ICMP
+sudo ufw allow 8080/tcp                                   # Ubuntu/Debian (ufw)
+sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload   # RHEL/Fedora
 ```
 
-macOS 上非特权 ICMP 开箱即用。程序启动时会自动检测可用的套接字模式（`PROBE_PRIVILEGED=auto`）。
+Web UI 没有内置登录；局域网之外暴露请开启 `AUTH_USER`/`AUTH_PASS`（HTTP Basic Auth）或放在反向代理后面。
 
 ## 配置
 
-全部通过环境变量（或 `-listen` / `-data` 参数）：
+全部通过环境变量（或 `-listen` / `-data` 参数）。systemd 安装时写在 `/etc/smokeping-plot-next/env`（用户模式 `~/.config/smokeping-plot-next/env`），Docker 写在 `docker-compose.yml` 的 `environment` 里：
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -102,9 +145,12 @@ make dev-api     # 终端 1：go run，监听 :8080
 make dev-web     # 终端 2：Vite 开发服务器 :5173，/api 代理到 :8080
 ```
 
+发布：打 `v*` tag 推送后 GitHub Actions 会交叉编译 linux amd64/arm64/armv7 与 darwin 并创建 Release，`install.sh` 默认下载最新 Release。
+
 目录结构：
 
 ```
+deploy/                    install.sh、systemd unit、env 模板
 cmd/smokeping-plot-next/   入口
 internal/config/           环境变量配置
 internal/probe/            ICMP / TCP 探测（pro-bing）

@@ -1,0 +1,22 @@
+# Per-user service: ~/.config/systemd/user/smokeping-plot-next.service
+#
+# Managed with `systemctl --user ...`. ICMP needs one of:
+#   sudo setcap cap_net_raw+ep ~/.local/bin/smokeping-plot-next
+#   sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+# (deploy/install.sh --user takes care of this when sudo is available.)
+[Unit]
+Description=smokeping-plot-next latency monitor (user)
+Documentation=https://github.com/pomhg/smokeping-plot-next
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=DATA_DIR=%h/.local/share/smokeping-plot-next
+Environment=LISTEN=:8080
+EnvironmentFile=-%h/.config/smokeping-plot-next/env
+ExecStart=%h/.local/bin/smokeping-plot-next
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
