@@ -169,6 +169,11 @@ func (s *Store) GetTarget(ctx context.Context, id int64) (Target, error) {
 
 func (s *Store) CreateTarget(ctx context.Context, t Target) (Target, error) {
 	t.CreatedAt = time.Now().Unix()
+	// New targets go to the end of their group.
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(sort_order), -1) + 1 FROM targets WHERE grp = ?`, t.Group).Scan(&t.SortOrder); err != nil {
+		return t, err
+	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO targets (name, host, grp, probe, port, step, pings, enabled, sort_order, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -191,6 +196,28 @@ func (s *Store) UpdateTarget(ctx context.Context, t Target) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// OrderItem places a target into a group at a position.
+type OrderItem struct {
+	ID        int64  `json:"id"`
+	Group     string `json:"group"`
+	SortOrder int    `json:"sortOrder"`
+}
+
+// Reorder applies group/sort_order for the given targets atomically.
+func (s *Store) Reorder(ctx context.Context, items []OrderItem) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, it := range items {
+		if _, err := tx.ExecContext(ctx, `UPDATE targets SET grp = ?, sort_order = ? WHERE id = ?`, it.Group, it.SortOrder, it.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeleteTarget(ctx context.Context, id int64) error {

@@ -46,7 +46,7 @@ export default function App() {
           <div className="muted center">…</div>
         ) : (
           <Routes>
-            <Route path="/" element={<Overview targets={targets} onAdd={(group) => setForm({ mode: 'create', group })} />} />
+            <Route path="/" element={<Overview targets={targets} onAdd={(group) => setForm({ mode: 'create', group })} onToast={showToast} />} />
             <Route path="/targets/:id" element={<TargetDetail targets={targets} onEdit={(target) => setForm({ mode: 'edit', target })} onToast={showToast} />} />
           </Routes>
         )}

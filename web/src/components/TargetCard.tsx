@@ -1,3 +1,4 @@
+import { forwardRef, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Series, TargetView } from '../api';
 import { fmtLoss, fmtMs, lossColor } from '../format';
@@ -10,6 +11,11 @@ interface Props {
   series?: Series;
   from: number;
   to: number;
+  /** Rendered inside the title bar; the sortable wrapper passes a drag handle. */
+  handle?: ReactNode;
+  style?: CSSProperties;
+  className?: string;
+  wrapperProps?: HTMLAttributes<HTMLDivElement>;
 }
 
 export type Status = 'up' | 'degraded' | 'down' | 'pending' | 'paused';
@@ -29,15 +35,20 @@ export function statusColor(t: TargetView, dark: boolean): string {
   return lossColor(t.last!.loss, dark);
 }
 
-export function TargetCard({ target, series, from, to }: Props) {
+export const TargetCard = forwardRef<HTMLDivElement, Props>(function TargetCard(
+  { target, series, from, to, handle, style, className = '', wrapperProps },
+  ref,
+) {
   const { t } = useI18n();
   const { resolved } = useTheme();
   const dark = resolved === 'dark';
   const st = statusOf(target);
   const last = target.last;
   return (
-    <Link to={`/targets/${target.id}`} className={`win target-card st-${st}`}>
+    <div ref={ref} style={style} className={`target-slot ${className}`} {...wrapperProps}>
+    <Link to={`/targets/${target.id}`} className={`win target-card st-${st}`} draggable={false} onDragStart={(e) => e.preventDefault()}>
       <div className="win-bar">
+        {handle}
         <span className={`led st-${st}`} style={{ background: statusColor(target, dark) }} />
         <span className="win-title">{target.name}</span>
         <span className="spacer" />
@@ -74,5 +85,6 @@ export function TargetCard({ target, series, from, to }: Props) {
         </div>
       </div>
     </Link>
+    </div>
   );
-}
+});

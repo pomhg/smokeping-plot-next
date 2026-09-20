@@ -15,7 +15,7 @@ REST + SSE), React web UI with smoke graphs, responsive for desktop and mobile.*
 - **烟雾图**：min–max 与 25–75% 分位烟雾带、按丢包率着色的中位数线、底部丢包条；对数坐标、拖拽缩放、hover/触摸提示
 - **多分辨率归档**：原始样本保留 30 天，小时级汇总保留 2 年（类似 RRD 的多级 RRA），长时间范围自动切换
 - **实时更新**：SSE 推送，新样本秒级出现在页面上
-- **节点管理**：Web UI 添加 / 编辑 / 删除 / 暂停节点，支持分组、批量添加、添加前测试连通性
+- **节点管理**：Web UI 添加 / 编辑 / 删除 / 暂停节点，支持分组、批量添加、添加前测试连通性；拖拽卡片左上角 ⠿ 手柄可在组内排序或拖到其他分组（手机上长按手柄）
 - **响应式 UI**：桌面卡片网格，手机单列 + 底部抽屉表单；深色 / 浅色主题跟随系统；中英文界面
 - **部署简单**：单二进制 + SQLite；Docker 镜像约 20 MB；可选 HTTP Basic Auth
 
@@ -129,6 +129,7 @@ Web UI 没有内置登录；局域网之外暴露请开启 `AUTH_USER`/`AUTH_PAS
 | `GET` | `/api/targets` | 节点列表（含最新一轮结果） |
 | `POST` | `/api/targets` | 新建 `{name, host, group, probe, port, step, pings, enabled}` |
 | `PUT` | `/api/targets/{id}` | 更新 |
+| `PUT` | `/api/targets/order` | 批量排序 `{items:[{id, group, sortOrder}]}` |
 | `DELETE` | `/api/targets/{id}` | 删除（含历史数据） |
 | `GET` | `/api/targets/{id}/series?from=&to=&points=` | 聚合时间序列（unix 秒；自动选择原始/汇总表） |
 | `GET` | `/api/series?ids=1,2&from=&to=&points=` | 多节点批量序列 |

@@ -31,7 +31,7 @@ export function Header({ connected, onAdd }: Props) {
       </span>
       <span className="spacer" />
       <button className="btn ghost" onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')} title={t('language')} aria-label={t('language')}>
-        {lang === 'zh' ? 'EN' : '中文'}
+        {lang === 'zh' ? '中文' : 'EN'}
       </button>
       <button className="btn ghost" onClick={cycleTheme} title={`${t('theme')}: ${t(pref)}`} aria-label={t('theme')}>
         {themeLabel}

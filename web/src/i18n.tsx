@@ -78,6 +78,8 @@ const dict = {
     createdOne: 'Created {name}',
     saved: 'Saved',
     deleted: 'Deleted',
+    dropHere: 'Drop here',
+    orderSaved: 'Order saved',
   },
   zh: {
     appName: 'smokeping-plot-next',
@@ -154,6 +156,8 @@ const dict = {
     createdOne: '已创建 {name}',
     saved: '已保存',
     deleted: '已删除',
+    dropHere: '拖到这里',
+    orderSaved: '排序已保存',
   },
 } as const;
 

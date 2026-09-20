@@ -24,6 +24,37 @@ func TestNewSampleStats(t *testing.T) {
 	}
 }
 
+func TestCreateAssignsSortOrderAndReorder(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	var ids []int64
+	for _, h := range []string{"a", "b", "c"} {
+		tg, err := st.CreateTarget(ctx, Target{Name: h, Host: h, Group: "g", Probe: "icmp", Step: 60, Pings: 5, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, tg.ID)
+	}
+	list, _ := st.ListTargets(ctx)
+	if list[0].SortOrder != 0 || list[1].SortOrder != 1 || list[2].SortOrder != 2 {
+		t.Fatalf("sort orders not sequential: %+v", list)
+	}
+	// move c to the front and b into another group
+	err = st.Reorder(ctx, []OrderItem{{ID: ids[2], Group: "g", SortOrder: 0}, {ID: ids[0], Group: "g", SortOrder: 1}, {ID: ids[1], Group: "h", SortOrder: 0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListTargets(ctx)
+	got := []string{list[0].Name, list[1].Name, list[2].Name}
+	if got[0] != "c" || got[1] != "a" || got[2] != "b" || list[2].Group != "h" {
+		t.Fatalf("unexpected order after reorder: %+v", list)
+	}
+}
+
 func TestSeriesAndRollup(t *testing.T) {
 	st, err := Open(t.TempDir())
 	if err != nil {

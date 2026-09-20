@@ -4,6 +4,7 @@ import { api, type Probe, type ProbeResult, type Target, type TargetInput } from
 import { useI18n } from '../i18n';
 import { fmtMs } from '../format';
 import { Modal } from './Modal';
+import { GroupCombobox } from './GroupCombobox';
 
 interface Props {
   target?: Target; // undefined → create
@@ -139,12 +140,7 @@ export function TargetForm({ target, groups, defaultGroup, onClose, onSaved }: P
         )}
         <label className="field">
           <span>{t('group')}</span>
-          <input value={group} onChange={(e) => setGroup(e.target.value)} list="group-list" placeholder="LAN" />
-          <datalist id="group-list">
-            {groups.map((g) => (
-              <option key={g} value={g} />
-            ))}
-          </datalist>
+          <GroupCombobox value={group} onChange={setGroup} options={groups} placeholder="LAN" />
           <small>{t('groupHint')}</small>
         </label>
         <div className="field-row">

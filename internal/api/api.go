@@ -41,6 +41,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stats", s.getStats)
 	mux.HandleFunc("GET /api/targets", s.listTargets)
 	mux.HandleFunc("POST /api/targets", s.createTarget)
+	mux.HandleFunc("PUT /api/targets/order", s.reorderTargets)
 	mux.HandleFunc("PUT /api/targets/{id}", s.updateTarget)
 	mux.HandleFunc("DELETE /api/targets/{id}", s.deleteTarget)
 	mux.HandleFunc("GET /api/targets/{id}/series", s.targetSeries)
@@ -306,6 +307,31 @@ func (s *Server) deleteTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.afterTargetChange()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// reorderTargets persists a drag-and-drop arrangement: each item's group and
+// position. Only the listed targets are touched.
+func (s *Server) reorderTargets(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Items []store.OrderItem `json:"items"`
+	}
+	if err := readJSON(w, r, &in); err != nil {
+		writeErr(w, 400, "invalid json: "+err.Error())
+		return
+	}
+	if len(in.Items) == 0 || len(in.Items) > 1000 {
+		writeErr(w, 400, "items must contain 1..1000 entries")
+		return
+	}
+	for i := range in.Items {
+		in.Items[i].Group = strings.TrimSpace(in.Items[i].Group)
+	}
+	if err := s.st.Reorder(r.Context(), in.Items); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	s.hub.Broadcast("targets", map[string]any{"ts": time.Now().Unix()})
 	w.WriteHeader(http.StatusNoContent)
 }
 
