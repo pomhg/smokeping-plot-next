@@ -117,6 +117,8 @@ export const api = {
     request<Target>(`/api/targets/${id}`, { method: 'PUT', body: JSON.stringify(t) }),
   reorderTargets: (items: { id: number; group: string; sortOrder: number }[]) =>
     request<void>('/api/targets/order', { method: 'PUT', body: JSON.stringify({ items }) }),
+  setGroupOrder: (groups: string[]) =>
+    request<void>('/api/groups/order', { method: 'PUT', body: JSON.stringify({ groups }) }),
   deleteTarget: (id: number) => request<void>(`/api/targets/${id}`, { method: 'DELETE' }),
   series: (id: number, from: number, to: number, points: number) =>
     request<Series>(`/api/targets/${id}/series${qs({ from, to, points })}`),

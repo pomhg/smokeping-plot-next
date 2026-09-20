@@ -5,7 +5,8 @@
 #   ./deploy/install.sh --user            # per-user service, no root needed
 #   ./deploy/install.sh --binary ./bin/smokeping-plot-next
 #   ./deploy/install.sh --version v0.2.0
-#   ./deploy/install.sh --uninstall [--user]
+#   ./deploy/install.sh --uninstall [--user]        # keeps data + config
+#   ./deploy/install.sh --uninstall --purge [--user] # also deletes them
 #
 # Binary source, in order: --binary PATH, ./bin/smokeping-plot-next next to
 # this repo, otherwise the GitHub release matching --version (default latest).
@@ -18,6 +19,7 @@ MODE=""            # system | user
 BINARY=""
 VERSION="latest"
 UNINSTALL=0
+PURGE=0
 PORT=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift ;;
     --port) PORT="$2"; shift ;;
     --uninstall) UNINSTALL=1 ;;
+    --purge) PURGE=1 ;;
     -h|--help) usage ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
@@ -51,7 +54,7 @@ fi
 if [ "$MODE" = system ] && [ "$(id -u)" -ne 0 ]; then
   if command -v sudo >/dev/null 2>&1; then
     log "system install needs root, re-running with sudo"
-    exec sudo -E "$0" --system ${BINARY:+--binary "$BINARY"} --version "$VERSION" ${PORT:+--port "$PORT"} $([ "$UNINSTALL" = 1 ] && echo --uninstall)
+    exec sudo -E "$0" --system ${BINARY:+--binary "$BINARY"} --version "$VERSION" ${PORT:+--port "$PORT"} $([ "$UNINSTALL" = 1 ] && echo --uninstall) $([ "$PURGE" = 1 ] && echo --purge)
   fi
   die "system install needs root (or pass --user)"
 fi
@@ -97,9 +100,16 @@ if [ "$UNINSTALL" = 1 ]; then
   $SYSTEMCTL disable --now $NAME 2>/dev/null || true
   rm -f "$UNIT" "$BIN_DIR/$NAME"
   $SYSTEMCTL daemon-reload
-  echo "Removed service and binary. Kept your data and config:"
-  echo "  $DATA_DIR"
-  echo "  $CONF_DIR"
+  $SYSTEMCTL reset-failed $NAME 2>/dev/null || true
+  if [ "$PURGE" = 1 ]; then
+    rm -rf "$CONF_DIR" "$DATA_DIR"
+    [ "$MODE" = system ] && rm -rf "/var/lib/private/$NAME"
+    echo "Removed service, binary, config and data."
+  else
+    echo "Removed service and binary. Kept your data and config (add --purge to delete):"
+    echo "  $DATA_DIR"
+    echo "  $CONF_DIR"
+  fi
   exit 0
 fi
 

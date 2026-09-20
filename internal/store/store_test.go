@@ -55,6 +55,38 @@ func TestCreateAssignsSortOrderAndReorder(t *testing.T) {
 	}
 }
 
+func TestGroupOrder(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	for _, g := range []string{"b", "a", "", "c"} {
+		if _, err := st.CreateTarget(ctx, Target{Name: g, Host: "h", Group: g, Probe: "icmp", Step: 60, Pings: 5, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := func() string {
+		list, _ := st.ListTargets(ctx)
+		out := ""
+		for _, x := range list {
+			out += "[" + x.Group + "]"
+		}
+		return out
+	}
+	if got := names(); got != "[a][b][c][]" {
+		t.Fatalf("default order = %s", got)
+	}
+	if err := st.SetGroupOrder(ctx, []string{"c", "", "a"}); err != nil {
+		t.Fatal(err)
+	}
+	// explicit order first, then unknown groups alphabetically
+	if got := names(); got != "[c][][a][b]" {
+		t.Fatalf("custom order = %s", got)
+	}
+}
+
 func TestSeriesAndRollup(t *testing.T) {
 	st, err := Open(t.TempDir())
 	if err != nil {

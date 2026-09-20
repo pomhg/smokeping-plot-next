@@ -12,11 +12,11 @@ interface Props {
 }
 
 export function DragHandle(props: React.HTMLAttributes<HTMLButtonElement> & { ref?: (el: HTMLElement | null) => void }) {
-  const { ref, ...rest } = props;
+  const { ref, className, ...rest } = props;
   return (
     <button
       type="button"
-      className="drag-handle"
+      className={className ?? 'drag-handle'}
       aria-label="drag to reorder"
       title="拖拽排序 / drag to reorder"
       ref={ref}

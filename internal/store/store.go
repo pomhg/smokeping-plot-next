@@ -113,6 +113,10 @@ func (s *Store) migrate() error {
 			err TEXT,
 			PRIMARY KEY (target_id, ts)
 		) WITHOUT ROWID`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS rollups (
 			target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
 			ts INTEGER NOT NULL,
@@ -142,6 +146,10 @@ func scanTarget(sc interface{ Scan(...any) error }) (Target, error) {
 	return t, err
 }
 
+// ListTargets returns targets grouped in the user-defined group order (see
+// GroupOrder), then by sort_order within each group. Groups not present in
+// the stored order come last, alphabetically; the ungrouped bucket ("") is
+// always after named groups unless explicitly placed.
 func (s *Store) ListTargets(ctx context.Context) ([]Target, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+targetCols+` FROM targets ORDER BY grp, sort_order, id`)
 	if err != nil {
@@ -156,7 +164,69 @@ func (s *Store) ListTargets(ctx context.Context) ([]Target, error) {
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	order, err := s.GroupOrder(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rank := map[string]int{}
+	for i, g := range order {
+		rank[g] = i
+	}
+	groupRank := func(g string) (int, string) {
+		if r, ok := rank[g]; ok {
+			return r, g
+		}
+		if g == "" {
+			return len(rank) + 1, g
+		}
+		return len(rank), g
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, gi := groupRank(out[i].Group)
+		rj, gj := groupRank(out[j].Group)
+		if ri != rj {
+			return ri < rj
+		}
+		if gi != gj {
+			return gi < gj
+		}
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder < out[j].SortOrder
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+// GroupOrder returns the user-defined ordering of group names.
+func (s *Store) GroupOrder(ctx context.Context) ([]string, error) {
+	var raw string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'group_order'`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var order []string
+	if err := json.Unmarshal([]byte(raw), &order); err != nil {
+		return []string{}, nil
+	}
+	return order, nil
+}
+
+// SetGroupOrder stores the ordering of group names.
+func (s *Store) SetGroupOrder(ctx context.Context, order []string) error {
+	b, err := json.Marshal(order)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES ('group_order', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b))
+	return err
 }
 
 func (s *Store) GetTarget(ctx context.Context, id int64) (Target, error) {

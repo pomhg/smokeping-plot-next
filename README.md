@@ -9,13 +9,24 @@
 *A self-contained SmokePing-style latency monitor: Go backend (ICMP/TCP multi-ping probes, SQLite,
 REST + SSE), React web UI with smoke graphs, responsive for desktop and mobile.*
 
+## 截图
+
+| 总览（浅色） | 节点详情（深色） |
+|---|---|
+| ![overview](docs/screenshots/overview-light.png) | ![detail](docs/screenshots/detail-dark.png) |
+
+| 添加节点 | 手机端 |
+|---|---|
+| ![add target](docs/screenshots/add-target.png) | <img src="docs/screenshots/overview-mobile.png" width="260" alt="mobile"> |
+
 ## 功能
 
 - **探测**：ICMP ping（纯 Go 实现，无需 fping）与 TCP connect；每轮 N 次（默认 20），间隔可配
 - **烟雾图**：min–max 与 25–75% 分位烟雾带、按丢包率着色的中位数线、底部丢包条；对数坐标、拖拽缩放、hover/触摸提示
 - **多分辨率归档**：原始样本保留 30 天，小时级汇总保留 2 年（类似 RRD 的多级 RRA），长时间范围自动切换
 - **实时更新**：SSE 推送，新样本秒级出现在页面上
-- **节点管理**：Web UI 添加 / 编辑 / 删除 / 暂停节点，支持分组、批量添加、添加前测试连通性；拖拽卡片左上角 ⠿ 手柄可在组内排序或拖到其他分组（手机上长按手柄）
+- **节点管理**：Web UI 添加 / 编辑 / 删除 / 暂停节点，支持分组、批量添加、添加前测试连通性
+- **拖拽排序**：拖卡片标题栏的 ⠿ 手柄在组内排序或拖进其他分组；拖分组标题旁的 ⠿ 调整分组先后；手机上长按手柄再拖。顺序保存在服务端，所有设备一致
 - **响应式 UI**：桌面卡片网格，手机单列 + 底部抽屉表单；深色 / 浅色主题跟随系统；中英文界面
 - **部署简单**：单二进制 + SQLite；Docker 镜像约 20 MB；可选 HTTP Basic Auth
 
@@ -57,7 +68,7 @@ sudo journalctl -u smokeping-plot-next -f
 sudo nano /etc/smokeping-plot-next/env      # 改端口、保留期、Basic Auth 等，改完 restart
 ```
 
-升级：重新运行同一条安装命令即可（保留数据和配置）。卸载：`./deploy/install.sh --uninstall [--user]`。
+升级：重新运行同一条安装命令即可（保留数据和配置）。卸载见下文。
 
 同一个脚本的其他参数：`--port 80`（配合 `CAP_NET_BIND_SERVICE` 可直接用 80 端口）、`--version v0.2.0`、`--binary ./bin/smokeping-plot-next`（用本地编译的二进制）。仓库为私有时设置 `GITHUB_TOKEN` 环境变量再运行。
 
@@ -83,6 +94,27 @@ make install-user          # = 编译 + ./deploy/install.sh --user
 ```
 
 裸跑二进制时 ICMP 权限同上（root / setcap / ping_group_range）。macOS 上非特权 ICMP 开箱即用。程序启动时自动检测可用的套接字模式（`PROBE_PRIVILEGED=auto`）。
+
+### 卸载
+
+systemd 安装（root 与 `--user` 模式对应）：
+
+```bash
+sudo ./deploy/install.sh --uninstall            # 停止并删除服务与二进制，保留 /etc/smokeping-plot-next 和 /var/lib/smokeping-plot-next
+sudo ./deploy/install.sh --uninstall --purge    # 连同配置和数据一起删除
+./deploy/install.sh --uninstall [--purge] --user # 用户模式
+```
+
+没有仓库目录时也可以直接：`curl -fsSL https://raw.githubusercontent.com/pomhg/smokeping-plot-next/main/deploy/install.sh | sudo bash -s -- --uninstall --purge`。
+
+Docker Compose：
+
+```bash
+docker compose down            # 停止并删除容器，保留 ./data
+docker compose down --rmi local && rm -rf ./data   # 连镜像和数据一起删
+```
+
+本地编译运行的：`make uninstall`（等价于 `./deploy/install.sh --uninstall`），或直接删掉 `bin/` 与 `data/`。
 
 ### 防火墙放行
 
@@ -116,7 +148,7 @@ Web UI 没有内置登录；局域网之外暴露请开启 `AUTH_USER`/`AUTH_PAS
 
 ## 界面
 
-- **总览**：按分组显示所有节点，每张卡片有当前中位数 / 丢包率与最近 1h–7d 的迷你烟雾图；支持搜索与分组筛选
+- **总览**：按分组显示所有节点，每张卡片有当前中位数 / 丢包率与最近 1h–7d 的迷你烟雾图；支持搜索与分组筛选（筛选时暂停拖拽）
 - **节点详情**：1h ～ 1y 时间范围、拖拽缩放、对数坐标、区间统计（平均中位数、min/max、丢包、可用率）
 - **添加节点**：主机栏可粘贴多行 / 逗号分隔的地址一次批量添加；「测试」按钮即时探测 5 次
 
@@ -129,7 +161,8 @@ Web UI 没有内置登录；局域网之外暴露请开启 `AUTH_USER`/`AUTH_PAS
 | `GET` | `/api/targets` | 节点列表（含最新一轮结果） |
 | `POST` | `/api/targets` | 新建 `{name, host, group, probe, port, step, pings, enabled}` |
 | `PUT` | `/api/targets/{id}` | 更新 |
-| `PUT` | `/api/targets/order` | 批量排序 `{items:[{id, group, sortOrder}]}` |
+| `PUT` | `/api/targets/order` | 节点排序 `{items:[{id, group, sortOrder}]}` |
+| `GET`/`PUT` | `/api/groups/order` | 分组顺序 `{groups:["LAN","Internet"]}` |
 | `DELETE` | `/api/targets/{id}` | 删除（含历史数据） |
 | `GET` | `/api/targets/{id}/series?from=&to=&points=` | 聚合时间序列（unix 秒；自动选择原始/汇总表） |
 | `GET` | `/api/series?ids=1,2&from=&to=&points=` | 多节点批量序列 |

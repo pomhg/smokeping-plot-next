@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { fmtMs } from '../format';
 import { Modal } from './Modal';
 import { GroupCombobox } from './GroupCombobox';
+import { Select } from './Select';
 
 interface Props {
   target?: Target; // undefined → create
@@ -146,10 +147,15 @@ export function TargetForm({ target, groups, defaultGroup, onClose, onSaved }: P
         <div className="field-row">
           <label className="field">
             <span>{t('probe')}</span>
-            <select value={probe} onChange={(e) => setProbe(e.target.value as Probe)}>
-              <option value="icmp">{t('icmp')}</option>
-              <option value="tcp">{t('tcp')}</option>
-            </select>
+            <Select<Probe>
+              value={probe}
+              onChange={setProbe}
+              aria-label={t('probe')}
+              options={[
+                { value: 'icmp', label: t('icmp') },
+                { value: 'tcp', label: t('tcp') },
+              ]}
+            />
           </label>
           {probe === 'tcp' && (
             <label className="field">

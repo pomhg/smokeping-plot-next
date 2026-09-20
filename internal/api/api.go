@@ -42,6 +42,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/targets", s.listTargets)
 	mux.HandleFunc("POST /api/targets", s.createTarget)
 	mux.HandleFunc("PUT /api/targets/order", s.reorderTargets)
+	mux.HandleFunc("GET /api/groups/order", s.getGroupOrder)
+	mux.HandleFunc("PUT /api/groups/order", s.setGroupOrder)
 	mux.HandleFunc("PUT /api/targets/{id}", s.updateTarget)
 	mux.HandleFunc("DELETE /api/targets/{id}", s.deleteTarget)
 	mux.HandleFunc("GET /api/targets/{id}/series", s.targetSeries)
@@ -328,6 +330,45 @@ func (s *Server) reorderTargets(w http.ResponseWriter, r *http.Request) {
 		in.Items[i].Group = strings.TrimSpace(in.Items[i].Group)
 	}
 	if err := s.st.Reorder(r.Context(), in.Items); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	s.hub.Broadcast("targets", map[string]any{"ts": time.Now().Unix()})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getGroupOrder(w http.ResponseWriter, r *http.Request) {
+	order, err := s.st.GroupOrder(r.Context())
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"groups": order})
+}
+
+// setGroupOrder stores the display order of groups on the overview.
+func (s *Server) setGroupOrder(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Groups []string `json:"groups"`
+	}
+	if err := readJSON(w, r, &in); err != nil {
+		writeErr(w, 400, "invalid json: "+err.Error())
+		return
+	}
+	if len(in.Groups) > 1000 {
+		writeErr(w, 400, "too many groups")
+		return
+	}
+	seen := map[string]bool{}
+	clean := make([]string, 0, len(in.Groups))
+	for _, g := range in.Groups {
+		g = strings.TrimSpace(g)
+		if !seen[g] {
+			seen[g] = true
+			clean = append(clean, g)
+		}
+	}
+	if err := s.st.SetGroupOrder(r.Context(), clean); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
