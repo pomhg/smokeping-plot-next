@@ -359,6 +359,19 @@ func (s *Store) InsertSample(ctx context.Context, sm Sample) error {
 	return err
 }
 
+// LastUp returns the timestamp of the newest raw sample with at least one
+// reply, or 0 when there is none. Walks the primary key backwards, so it is
+// cheap unless the target has been down for a very long time.
+func (s *Store) LastUp(ctx context.Context, targetID int64) (int64, error) {
+	var ts int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT ts FROM samples WHERE target_id = ? AND recv > 0 ORDER BY ts DESC LIMIT 1`, targetID).Scan(&ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return ts, err
+}
+
 // LatestSamples returns the most recent sample for every target.
 func (s *Store) LatestSamples(ctx context.Context) (map[int64]Sample, error) {
 	rows, err := s.db.QueryContext(ctx, `

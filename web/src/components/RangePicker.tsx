@@ -36,3 +36,11 @@ export function RangePicker({ value, onChange, options = RANGES, label }: Props)
     </div>
   );
 }
+
+/** "3h" → "近 3 小时" / "Last 3h" for stat labels. */
+export function rangeLabel(key: string, lang: string): string {
+  if (lang !== 'zh') return `Last ${key}`;
+  const n = key.slice(0, -1);
+  const unit = { h: '小时', d: '天', y: '年' }[key.slice(-1)] ?? key.slice(-1);
+  return `近 ${n} ${unit}`;
+}

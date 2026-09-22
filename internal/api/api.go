@@ -149,6 +149,9 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 type targetView struct {
 	store.Target
 	Last *store.Sample `json:"last"`
+	// LastUp is the timestamp of the most recent round with at least one
+	// reply; only filled in while the target is currently down (0 = never).
+	LastUp *int64 `json:"lastUp,omitempty"`
 }
 
 func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +171,14 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) {
 		if sm, ok := latest[t.ID]; ok {
 			sm := sm
 			tv.Last = &sm
+			if sm.Recv == 0 {
+				up, err := s.st.LastUp(r.Context(), t.ID)
+				if err != nil {
+					writeErr(w, 500, err.Error())
+					return
+				}
+				tv.LastUp = &up
+			}
 		}
 		out = append(out, tv)
 	}

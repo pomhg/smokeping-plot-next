@@ -12,6 +12,8 @@ interface Props {
   height?: number;
   /** Overview cards: no axes labels, tighter padding, tooltip still works. */
   compact?: boolean;
+  /** Row sparkline: compact, plus no background, grid or frame. */
+  bare?: boolean;
   logScale?: boolean;
   onZoom?: (from: number, to: number) => void;
 }
@@ -114,7 +116,7 @@ function xTicks(from: number, to: number, plotW: number, compact: boolean): { ts
   return out;
 }
 
-export function SmokeChart({ points, from, to, bucket, height = 300, compact = false, logScale = false, onZoom }: Props) {
+export function SmokeChart({ points, from, to, bucket, height = 300, compact = false, bare = false, logScale = false, onZoom }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -138,10 +140,10 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
   }, []);
 
   const layout = useMemo<Layout>(() => {
-    const left = compact ? 6 : 48;
-    const right = compact ? 6 : 12;
-    const top = compact ? 6 : 10;
-    const lossH = compact ? 4 : 6;
+    const left = bare ? 0 : compact ? 6 : 48;
+    const right = bare ? 0 : compact ? 6 : 12;
+    const top = bare ? 2 : compact ? 6 : 10;
+    const lossH = bare ? 3 : compact ? 4 : 6;
     const xAxisH = compact ? 0 : 20;
     const bottom = height - xAxisH - lossH - 2;
     // Y range: the smoke's 98th percentile of per-bucket maxima (so one
@@ -173,9 +175,24 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     } else {
       yMin = 0;
       yMax = niceCeil(maxV * (compact ? 1.15 : 1.05));
+      if (bare) {
+        // row sparklines are ~30px tall: frame the data instead of starting
+        // at 0, otherwise every healthy line is flat
+        let lo = Infinity;
+        let hi = 0;
+        for (const p of points) {
+          if (p.p25 !== null && p.p25 < lo) lo = p.p25;
+          if (p.p75 !== null && p.p75 > hi) hi = p.p75;
+        }
+        if (Number.isFinite(lo) && hi > 0) {
+          const pad = Math.max((hi - lo) * 0.15, hi * 0.02);
+          yMin = Math.max(0, lo - pad);
+          yMax = hi + pad;
+        }
+      }
     }
     return { left, right, top, bottom, lossH, plotW: Math.max(1, width - left - right), plotH: Math.max(1, bottom - top), yMin, yMax, log };
-  }, [points, width, height, compact, logScale]);
+  }, [points, width, height, compact, bare, logScale]);
 
   const xOf = useCallback((ts: number) => layout.left + ((ts - from) / Math.max(1, to - from)) * layout.plotW, [layout, from, to]);
   const tsOf = useCallback((x: number) => from + ((x - layout.left) / layout.plotW) * (to - from), [layout, from, to]);
@@ -184,7 +201,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
       const { yMin, yMax, log, top, plotH } = layout;
       let f: number;
       if (log) f = Math.log(Math.max(v, yMin) / yMin) / Math.log(yMax / yMin);
-      else f = v / yMax;
+      else f = (v - yMin) / (yMax - yMin);
       return top + plotH - Math.min(1, Math.max(0, f)) * plotH;
     },
     [layout],
@@ -211,15 +228,18 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     const gap = bucket * 1.5;
 
     // plot background: paper + dot texture + frame
-    ctx.fillStyle = dark ? '#121212' : '#fefefe';
-    ctx.fillRect(left, top, plotW, plotH);
-    const pat = dotPattern(ctx, ink, dpr);
-    if (pat) {
-      ctx.fillStyle = pat;
+    if (!bare) {
+      ctx.fillStyle = dark ? '#121212' : '#fefefe';
       ctx.fillRect(left, top, plotW, plotH);
+      const pat = dotPattern(ctx, ink, dpr);
+      if (pat) {
+        ctx.fillStyle = pat;
+        ctx.fillRect(left, top, plotW, plotH);
+      }
     }
 
     // grid + y axis
+    if (!bare) {
     ctx.font = `${compact ? 9 : 10.5}px "JetBrains Mono", ui-monospace, Menlo, monospace`;
     ctx.textBaseline = 'middle';
     const yt = layout.log ? logTicks(layout.yMin, layout.yMax) : linearTicks(layout.yMax, compact ? 3 : 5);
@@ -252,6 +272,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     // frame around the plot
     ctx.strokeStyle = `rgb(${ink})`;
     ctx.strokeRect(left + 0.5, top + 0.5, plotW - 1, plotH - 1);
+    }
 
     // clip to plot for data
     ctx.save();
@@ -346,6 +367,20 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
     }
     ctx.globalAlpha = 1;
 
+    // compact cards have no axis; label the top gridline so sparklines of
+    // very different magnitudes (0.6 ms vs 60 ms) can be told apart
+    if (compact && !bare && points.length > 0) {
+      const label = `${fmtMsAxis(layout.yMax)}ms`;
+      ctx.font = '9px "JetBrains Mono", ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const w = ctx.measureText(label).width + 6;
+      ctx.fillStyle = dark ? '#121212' : '#fefefe';
+      ctx.fillRect(left + 1, top + 1, w, 12);
+      ctx.fillStyle = axisText;
+      ctx.fillText(label, left + 4, top + 2.5);
+    }
+
     // drag selection
     if (drag) {
       const a = Math.min(drag.x0, drag.x1);
@@ -379,7 +414,7 @@ export function SmokeChart({ points, from, to, bucket, height = 300, compact = f
         ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
       }
     }
-  }, [points, width, height, layout, from, to, bucket, compact, theme, hoverIdx, drag, xOf, yOf]);
+  }, [points, width, height, layout, from, to, bucket, compact, bare, theme, hoverIdx, drag, xOf, yOf]);
 
   // ------------------------------------------------------------ interaction
   const nearest = useCallback(

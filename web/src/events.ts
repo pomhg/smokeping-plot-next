@@ -28,7 +28,13 @@ export function useLiveEvents(): boolean {
       const sm = JSON.parse((ev as MessageEvent).data) as Sample;
       // Patch the cached target list immediately for a snappy status pill.
       qc.setQueryData<import('./api').TargetView[]>(['targets'], (old) =>
-        old?.map((t) => (t.id === sm.targetId ? { ...t, last: sm } : t)),
+        old?.map((t) =>
+          t.id !== sm.targetId
+            ? t
+            : sm.recv > 0
+              ? { ...t, last: sm, lastUp: undefined }
+              : { ...t, last: sm, lastUp: t.lastUp ?? (t.last && t.last.recv > 0 ? t.last.ts : undefined) },
+        ),
       );
       scheduleSeriesRefresh();
     });

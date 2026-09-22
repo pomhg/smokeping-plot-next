@@ -79,3 +79,16 @@ export const LOSS_LABELS = ['0%', '≤5%', '≤10%', '≤25%', '≤50%', '>50%']
 export function lossLegend(dark: boolean): { label: string; color: string }[] {
   return LOSS_LABELS.map((label, i) => ({ label, color: (dark ? LOSS_DARK : LOSS_LIGHT)[i] }));
 }
+
+/** Two-unit duration for "down for …" style labels: 45s, 12m, 3h 5m, 2d 4h. */
+export function fmtSince(sec: number, lang: Lang): string {
+  const s = Math.max(0, Math.floor(sec));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const zh = lang === 'zh';
+  if (d > 0) return zh ? `${d} 天${h ? ` ${h} 小时` : ''}` : `${d}d${h ? ` ${h}h` : ''}`;
+  if (h > 0) return zh ? `${h} 小时${m ? ` ${m} 分` : ''}` : `${h}h${m ? ` ${m}m` : ''}`;
+  if (m > 0) return zh ? `${m} 分钟` : `${m}m`;
+  return zh ? `${s} 秒` : `${s}s`;
+}

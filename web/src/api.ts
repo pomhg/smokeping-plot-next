@@ -34,6 +34,8 @@ export type Point = Omit<Sample, 'targetId' | 'rtts' | 'err'>;
 
 export interface TargetView extends Target {
   last: Sample | null;
+  /** Newest round with a reply; only sent while the target is down (0 = never). */
+  lastUp?: number;
 }
 
 export interface Series {

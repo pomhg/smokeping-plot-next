@@ -125,6 +125,10 @@ func TestSeriesAndRollup(t *testing.T) {
 		t.Fatalf("down bucket: %+v", pts[11])
 	}
 
+	if up, err := st.LastUp(ctx, tg.ID); err != nil || up != base+59*60 {
+		t.Fatalf("LastUp = %d, %v; want %d", up, err, base+59*60)
+	}
+
 	if err := st.Rollup(ctx, base); err != nil {
 		t.Fatal(err)
 	}

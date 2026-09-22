@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type TargetView } from '../api';
 import { useI18n } from '../i18n';
 import { useTheme } from '../theme';
-import { fmtDateTime, fmtDuration, fmtLoss, fmtMs, lossColor, lossLegend } from '../format';
+import { fmtDateTime, fmtDuration, fmtLoss, fmtMs, fmtSince, fmtTime, lossColor, lossLegend } from '../format';
 import { SmokeChart } from '../components/SmokeChart';
 import { RANGES, RangePicker } from '../components/RangePicker';
 import { Modal } from '../components/Modal';
 import { CropMarks } from '../components/CropMarks';
-import { statusColor, statusOf } from '../components/TargetCard';
+import { downFor, statusColor, statusOf, useNow } from '../status';
+import { rangeLabel } from '../components/RangePicker';
 
 interface Props {
   targets: TargetView[];
@@ -34,12 +35,26 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
     }
   });
   const [confirmDel, setConfirmDel] = useState(false);
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const now = useNow(15_000);
 
+  // prev / next in overview order (the API returns targets in that order)
+  const idx = targets.findIndex((x) => String(x.id) === id);
+  const prev = idx > 0 ? targets[idx - 1] : null;
+  const next = idx >= 0 && idx < targets.length - 1 ? targets[idx + 1] : null;
+  const goTo = useCallback(
+    (tid: number) => navigate({ pathname: `/targets/${tid}`, search: params.get('r') ? `?r=${params.get('r')}` : '' }),
+    [navigate, params],
+  );
   useEffect(() => {
-    const iv = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 15_000);
-    return () => window.clearInterval(iv);
-  }, []);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if ((e.target as HTMLElement).closest('input, textarea, [role=dialog], [role=listbox]')) return;
+      if (e.key === 'ArrowLeft' && prev) goTo(prev.id);
+      else if (e.key === 'ArrowRight' && next) goTo(next.id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [prev, next, goTo]);
   useEffect(() => {
     try {
       localStorage.setItem('spn.log', logScale ? '1' : '0');
@@ -100,7 +115,13 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
     let wsum = 0;
     let wcount = 0;
     let upBuckets = 0;
+    let iqrSum = 0;
+    let iqrN = 0;
     for (const p of pts) {
+      if (p.p25 !== null && p.p75 !== null) {
+        iqrSum += (p.p75 - p.p25) * p.recv;
+        iqrN += p.recv;
+      }
       sent += p.sent;
       recv += p.recv;
       if (p.min !== null && p.min < min) min = p.min;
@@ -117,6 +138,7 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
       max: Number.isFinite(max) ? max : null,
       median: wcount > 0 ? wsum / wcount : null,
       availability: pts.length > 0 ? (100 * upBuckets) / pts.length : null,
+      jitter: iqrN > 0 ? iqrSum / iqrN : null,
       sent,
       recv,
     };
@@ -138,11 +160,30 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
     );
   }
 
-  const st = statusOf(target);
+  const st = statusOf(target, now);
   const last = target.last;
   const ageSec = last ? Math.max(0, now - last.ts) : null;
+  const down = downFor(target, now);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const legend = lossLegend(dark);
+  const rangeName = live && presetKey ? rangeLabel(presetKey, lang) : t('range');
+  const updated = ageSec === null ? '' : ageSec < 5 ? t('justNow') : t('ago', { t: fmtSince(ageSec, lang) });
+
+  let nowValue = '—';
+  let nowColor: string | undefined;
+  let nowSub = updated;
+  if (st === 'down') {
+    nowValue = down === null ? t('unreachable') : down < 0 ? t('neverUp') : t('downFor', { t: fmtSince(down, lang) });
+    nowColor = lossColor(100, dark);
+    if (down !== null && down >= 0) nowSub = t('lastOk', { t: fmtTime(target.lastUp!) });
+  } else if (st === 'stale') {
+    nowValue = t('staleFor', { t: fmtSince(ageSec ?? 0, lang) });
+    nowColor = 'var(--muted)';
+  } else if (last && last.recv > 0) {
+    nowValue = fmtMs(last.median);
+    nowSub = `${t('loss')} ${fmtLoss(last.loss)} · ${updated}`;
+    if (last.loss > 0) nowColor = undefined;
+  }
 
   return (
     <div className="detail">
@@ -153,24 +194,27 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
         </Link>
         <div className="detail-title">
           <div className="meta">
-            <span className={`led st-${st}`} style={{ background: statusColor(target, dark) }} />
+            <span className={`led st-${st}`} style={{ background: statusColor(target, now, dark) }} />
             {target.group || t('ungrouped')} / {target.probe.toUpperCase()}
             {target.probe === 'tcp' ? `:${target.port}` : ''} · {t('every', { step: target.step, pings: target.pings })}
             {!target.enabled && <> · {t('paused').toUpperCase()}</>}
           </div>
           <h1 className="display">{target.name}</h1>
-          <div className="meta">
-            {target.host}
-            {ageSec !== null && (
-              <>
-                {' '}
-                · {t('lastUpdate')}: {ageSec < 5 ? t('justNow') : t('ago', { t: fmtDuration(ageSec, lang) })}
-              </>
-            )}
-          </div>
+          <div className="meta host-line">{target.host}</div>
         </div>
         <span className="spacer" />
         <div className="actions">
+          <div className="seg pager">
+            <button className="seg-btn" disabled={!prev} onClick={() => prev && goTo(prev.id)} title={prev ? `${t('prevTarget')}: ${prev.name}` : t('prevTarget')} aria-label={t('prevTarget')}>
+              ‹
+            </button>
+            <span className="seg-btn pager-pos" title={t('shortcuts')}>
+              {idx + 1}/{targets.length}
+            </span>
+            <button className="seg-btn" disabled={!next} onClick={() => next && goTo(next.id)} title={next ? `${t('nextTarget')}: ${next.name}` : t('nextTarget')} aria-label={t('nextTarget')}>
+              ›
+            </button>
+          </div>
           <button className="btn" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
             {target.enabled ? t('disabled') : t('enabled')}
           </button>
@@ -183,13 +227,26 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
         </div>
       </div>
 
+      <div className="stats-caption meta">
+        <span>{t('current')}</span>
+        <span>{live ? rangeName : `${fmtDateTime(from)} → ${fmtDateTime(to)}`}</span>
+      </div>
       <div className="stats-row">
-        <Stat label={t('median')} value={last && last.recv > 0 ? fmtMs(last.median) : last ? t('unreachable') : '—'} sub="NOW" color={last && last.recv === 0 ? lossColor(100, dark) : undefined} />
-        <Stat label={t('loss')} value={last ? fmtLoss(last.loss) : '—'} sub="NOW" color={last && last.loss > 0 ? lossColor(last.loss, dark) : undefined} />
-        <Stat label={`${t('avg')} ${t('median')}`} value={fmtMs(stats.median)} sub={t('range')} />
-        <Stat label={`${t('min')} / ${t('max')}`} value={`${fmtMs(stats.min)} / ${fmtMs(stats.max)}`} sub={t('range')} />
-        <Stat label={t('loss')} value={fmtLoss(stats.loss)} sub={`${t('range')} · ${stats.recv}/${stats.sent}`} color={stats.loss && stats.loss > 0 ? lossColor(stats.loss, dark) : undefined} />
-        <Stat label={t('availability')} value={stats.availability === null ? '—' : `${stats.availability.toFixed(stats.availability === 100 ? 0 : 2)}%`} sub={t('range')} />
+        <Stat className="stat-now" label={last && last.recv > 0 && st !== 'stale' ? t('median') : t('status')} value={nowValue} sub={nowSub} color={nowColor} />
+        <div className="stats-range-mobile meta">{live ? rangeName : t('range')}</div>
+        <Stat label={t('rangeAvg')} value={fmtMs(stats.median)} />
+        <Stat label={t('jitter')} value={fmtMs(stats.jitter)} title={t('jitterHint')} />
+        <Stat label={`${t('min')} / ${t('max')}`} value={`${fmtMs(stats.min)} / ${fmtMs(stats.max)}`} />
+        <Stat
+          label={t('loss')}
+          value={fmtLoss(stats.loss)}
+          sub={`${stats.recv}/${stats.sent}`}
+          color={stats.loss && stats.loss > 0 ? lossColor(stats.loss, dark) : undefined}
+        />
+        <Stat
+          label={t('availability')}
+          value={stats.availability === null ? '—' : `${stats.availability.toFixed(stats.availability === 100 ? 0 : 2)}%`}
+        />
       </div>
 
       <div className="win chart-win">
@@ -237,9 +294,11 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
                 {l.label}
               </span>
             ))}
-            <span className="meta legend-smoke">{t('smokeLegend')}</span>
+            <span className="spacer" />
+            <span className="meta legend-help" title={t('smokeLegend')}>
+              ⓘ {t('zoomHint')}
+            </span>
           </div>
-          <div className="meta hint">{t('zoomHint')}</div>
         </div>
       </div>
 
@@ -267,9 +326,9 @@ export function TargetDetail({ targets, onEdit, onToast }: Props) {
   );
 }
 
-function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function Stat({ label, value, sub, color, title, className = '' }: { label: string; value: string; sub?: string; color?: string; title?: string; className?: string }) {
   return (
-    <div className="stat">
+    <div className={`stat ${className}`} title={title}>
       <div className="stat-label">{label}</div>
       <div className="stat-value display" style={{ color }}>
         {value}

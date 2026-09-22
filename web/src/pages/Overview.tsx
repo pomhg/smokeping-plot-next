@@ -26,7 +26,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { api, type TargetView } from '../api';
 import { useI18n } from '../i18n';
-import { TargetCard } from '../components/TargetCard';
+import { TargetCard, type Density } from '../components/TargetCard';
+import { PROBLEM_STATUSES, countStatuses, statusOf, useNow, type Status } from '../status';
 import { DragHandle, SortableCard } from '../components/SortableCard';
 import { RangePicker } from '../components/RangePicker';
 import { CropMarks } from '../components/CropMarks';
@@ -84,19 +85,44 @@ export function Overview({ targets, onAdd, onToast }: Props) {
   });
   const [query, setQuery] = useState('');
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const [statusFilter, setStatusFilter] = useState<'problem' | Status | null>(null);
+  const [density, setDensity] = useState<Density>(() => {
+    try {
+      return localStorage.getItem('spn.density') === 'row' ? 'row' : 'card';
+    } catch {
+      return 'card';
+    }
+  });
+  const searchRef = useRef<HTMLInputElement>(null);
+  const now = useNow(15_000);
 
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
   useEffect(() => {
     try {
       localStorage.setItem('spn.overviewRange', rangeKey);
+      localStorage.setItem('spn.density', density);
     } catch {
       /* ignore */
     }
-  }, [rangeKey]);
+  }, [rangeKey, density]);
+
+  // "/" focuses search, Esc clears filters
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      const typing = el.closest('input, textarea, [contenteditable], [role=dialog]');
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === 'Escape' && (el === searchRef.current || !typing)) {
+        setQuery('');
+        setStatusFilter(null);
+        setGroupFilter(null);
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const range = OVERVIEW_RANGES.find((r) => r.key === rangeKey) ?? OVERVIEW_RANGES[1];
   const to = now;
@@ -141,7 +167,7 @@ export function Overview({ targets, onAdd, onToast }: Props) {
     onError: onSaveError,
   });
 
-  const canSort = query.trim() === '' && groupFilter === null;
+  const canSort = query.trim() === '' && groupFilter === null && statusFilter === null;
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -222,8 +248,15 @@ export function Overview({ targets, onAdd, onToast }: Props) {
 
   // ---------------------------------------------------------------- filtering
   const q = query.trim().toLowerCase();
+  const matchStatus = (x: TargetView) => {
+    if (statusFilter === null) return true;
+    const st = statusOf(x, now);
+    return statusFilter === 'problem' ? PROBLEM_STATUSES.includes(st) : st === statusFilter;
+  };
   const matches = (x: TargetView) =>
-    (groupFilter === null || x.group === groupFilter) && (!q || x.name.toLowerCase().includes(q) || x.host.toLowerCase().includes(q));
+    (groupFilter === null || x.group === groupFilter) &&
+    matchStatus(x) &&
+    (!q || x.name.toLowerCase().includes(q) || x.host.toLowerCase().includes(q) || x.group.toLowerCase().includes(q));
 
   const sections = useMemo(() => {
     const out: [string, TargetView[]][] = [];
@@ -233,7 +266,7 @@ export function Overview({ targets, onAdd, onToast }: Props) {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arr, byId, q, groupFilter, active]);
+  }, [arr, byId, q, groupFilter, statusFilter, now, active]);
 
   if (targets.length === 0) {
     return (
@@ -253,16 +286,43 @@ export function Overview({ targets, onAdd, onToast }: Props) {
   }
 
   const activeTarget = typeof active === 'number' ? byId.get(active) : undefined;
+  const counts = countStatuses(targets, now);
+  const problems = counts.down + counts.degraded + counts.stale;
+  const filtering = query.trim() !== '' || groupFilter !== null || statusFilter !== null;
   const activeGroup = active !== null && isGroupId(active) ? (active as string).slice(GSORT.length) : null;
 
   return (
     <div className="overview">
+      <StatusBar
+        counts={counts}
+        total={targets.length}
+        problems={problems}
+        value={statusFilter}
+        onChange={(v) => setStatusFilter((cur) => (cur === v ? null : v))}
+      />
       <div className="toolbar">
         <label className="search-wrap">
           <span className="search-prompt">&gt;</span>
-          <input className="search" type="search" placeholder={t('search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input
+            ref={searchRef}
+            className="search"
+            type="search"
+            placeholder={t('search')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query === '' && <kbd className="kbd-hint">/</kbd>}
         </label>
         <RangePicker value={range.key} onChange={setRangeKey} options={OVERVIEW_RANGES} />
+        <span className="spacer" />
+        <div className="seg" role="radiogroup" aria-label={t('density')}>
+          <button role="radio" aria-checked={density === 'card'} className={`seg-btn${density === 'card' ? ' active' : ''}`} onClick={() => setDensity('card')} title={t('densityCard')}>
+            ▦<span className="seg-label"> {t('densityCard')}</span>
+          </button>
+          <button role="radio" aria-checked={density === 'row'} className={`seg-btn${density === 'row' ? ' active' : ''}`} onClick={() => setDensity('row')} title={t('densityRow')}>
+            ☰<span className="seg-label"> {t('densityRow')}</span>
+          </button>
+        </div>
       </div>
       {groups.length > 1 && (
         <div className="seg group-seg">
@@ -276,7 +336,24 @@ export function Overview({ targets, onAdd, onToast }: Props) {
           ))}
         </div>
       )}
-      {sections.length === 0 && <p className="muted center">{t('noMatch')}</p>}
+      {sections.length === 0 && (
+        <div className="no-match">
+          <p className="muted">{statusFilter === 'problem' ? t('allGood') : t('noMatch')}</p>
+          {filtering && (
+            <button
+              className="btn small"
+              onClick={() => {
+                setQuery('');
+                setGroupFilter(null);
+                setStatusFilter(null);
+              }}
+            >
+              {t('clearFilters')}
+            </button>
+          )}
+        </div>
+      )}
+      {!canSort && sections.length > 0 && <div className="meta sort-hint">{t('sortPaused')}</div>}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -301,9 +378,18 @@ export function Overview({ targets, onAdd, onToast }: Props) {
                     </button>
                   </div>
                   {activeGroup === null && (
-                    <div className="grid">
+                    <div className={density === 'row' ? 'rows' : 'grid'}>
                       {list.map((x) => (
-                        <SortableCard key={x.id} target={x} series={series?.[String(x.id)]} from={from} to={to} disabled={!canSort} />
+                        <SortableCard
+                          key={x.id}
+                          target={x}
+                          series={series?.[String(x.id)]}
+                          from={from}
+                          to={to}
+                          now={now}
+                          density={density}
+                          disabled={!canSort}
+                        />
                       ))}
                       {list.length === 0 && <div className="drop-empty meta">{t('dropHere')}</div>}
                     </div>
@@ -315,7 +401,16 @@ export function Overview({ targets, onAdd, onToast }: Props) {
         </SortableContext>
         <DragOverlay dropAnimation={null}>
           {activeTarget ? (
-            <TargetCard className="overlay" target={activeTarget} series={series?.[String(activeTarget.id)]} from={from} to={to} handle={<span className="drag-handle">⠿</span>} />
+            <TargetCard
+              className="overlay"
+              target={activeTarget}
+              series={series?.[String(activeTarget.id)]}
+              from={from}
+              to={to}
+              now={now}
+              density={density}
+              handle={<span className="drag-handle">⠿</span>}
+            />
           ) : activeGroup !== null ? (
             <div className="group-head overlay">
               <CropMarks />
@@ -360,5 +455,54 @@ function GroupSection({ group, ids, canSort, collapsed, children }: GroupSection
         {children(handle)}
       </SortableContext>
     </section>
+  );
+}
+
+interface StatusBarProps {
+  counts: Record<Status, number>;
+  total: number;
+  problems: number;
+  value: 'problem' | Status | null;
+  onChange: (v: 'problem' | Status) => void;
+}
+
+/** Headline tiles: how many targets are fine / lossy / down. Click to filter. */
+function StatusBar({ counts, total, problems, value, onChange }: StatusBarProps) {
+  const { t } = useI18n();
+  const tiles: { key: 'problem' | Status; label: string; n: number; tone: string; show: boolean }[] = [
+    { key: 'up', label: t('stUp'), n: counts.up, tone: 'ok', show: true },
+    { key: 'degraded', label: t('stDegraded'), n: counts.degraded, tone: 'warn', show: true },
+    { key: 'down', label: t('stDown'), n: counts.down, tone: 'bad', show: true },
+    { key: 'stale', label: t('stStale'), n: counts.stale, tone: 'stale', show: counts.stale > 0 },
+    { key: 'paused', label: t('stPaused'), n: counts.paused + counts.pending, tone: 'idle', show: counts.paused + counts.pending > 0 },
+  ];
+  return (
+    <div className={`status-bar${problems > 0 ? ' has-problems' : ''}`}>
+      <div className="status-summary">
+        <span className="meta">{t('targetsCount', { n: total })}</span>
+        <span className="status-headline display">{problems > 0 ? t('problemsN', { n: problems }) : t('allGood')}</span>
+        {problems > 0 && (
+          <button className={`link-btn${value === 'problem' ? ' on' : ''}`} onClick={() => onChange('problem')}>
+            {value === 'problem' ? t('showAll') : t('showProblems')}
+          </button>
+        )}
+      </div>
+      {tiles
+        .filter((x) => x.show)
+        .map((x) => (
+          <button
+            key={x.key}
+            className={`status-tile tone-${x.tone}${value === x.key ? ' active' : ''}${x.n === 0 ? ' zero' : ''}`}
+            onClick={() => onChange(x.key)}
+            aria-pressed={value === x.key}
+          >
+            <span className="status-n display">{x.n}</span>
+            <span className="status-label">
+              <span className={`led tone-${x.tone}`} />
+              {x.label}
+            </span>
+          </button>
+        ))}
+    </div>
   );
 }

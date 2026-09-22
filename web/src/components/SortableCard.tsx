@@ -1,13 +1,15 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Series, TargetView } from '../api';
-import { TargetCard } from './TargetCard';
+import { TargetCard, type Density } from './TargetCard';
 
 interface Props {
   target: TargetView;
   series?: Series;
   from: number;
   to: number;
+  now: number;
+  density: Density;
   disabled?: boolean;
 }
 
@@ -31,7 +33,7 @@ export function DragHandle(props: React.HTMLAttributes<HTMLButtonElement> & { re
   );
 }
 
-export function SortableCard({ target, series, from, to, disabled }: Props) {
+export function SortableCard({ target, series, from, to, now, density, disabled }: Props) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: target.id,
     disabled,
@@ -49,6 +51,8 @@ export function SortableCard({ target, series, from, to, disabled }: Props) {
       series={series}
       from={from}
       to={to}
+      now={now}
+      density={density}
       handle={disabled ? null : <DragHandle ref={setActivatorNodeRef} {...attributes} {...listeners} />}
     />
   );

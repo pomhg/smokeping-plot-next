@@ -8,6 +8,8 @@ import { Header } from './components/Header';
 import { TargetForm } from './components/TargetForm';
 import { Overview, groupsOf } from './pages/Overview';
 import { TargetDetail } from './pages/TargetDetail';
+import { useNow } from './status';
+import { useStatusTitle } from './favicon';
 
 type FormState = { mode: 'create'; group?: string } | { mode: 'edit'; target: TargetView } | null;
 
@@ -23,6 +25,8 @@ export default function App() {
     refetchInterval: connected ? false : 15_000,
   });
   const groups = useMemo(() => groupsOf(targets), [targets]);
+  const now = useNow(15_000);
+  useStatusTitle(targets, now, t);
 
   const showToast = useCallback((msg: string) => setToast(msg), []);
   useEffect(() => {
