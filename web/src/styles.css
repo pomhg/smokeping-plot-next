@@ -935,7 +935,7 @@ input[type='search']::-webkit-search-cancel-button {
   background: var(--bar);
   color: var(--bar-text);
 }
-.status-tile.zero {
+.status-tile.zero:not(.active) {
   color: var(--muted);
 }
 .status-n {
