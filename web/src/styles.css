@@ -563,6 +563,7 @@ input[type='search']::-webkit-search-cancel-button {
 }
 .card-val,
 .card-loss,
+.card-pending,
 .card-row .tag {
   flex-shrink: 0;
   white-space: nowrap;
@@ -575,7 +576,8 @@ input[type='search']::-webkit-search-cancel-button {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.card-loss {
+.card-loss,
+.card-pending {
   font-size: 11px;
   color: var(--muted);
 }

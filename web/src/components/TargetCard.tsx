@@ -34,7 +34,7 @@ function Reading({ target, now }: { target: TargetView; now: number }) {
     case 'paused':
       return <span className="tag">{t('paused')}</span>;
     case 'pending':
-      return <span className="muted">{t('waiting')}</span>;
+      return <span className="muted card-pending">{t('waiting')}</span>;
     case 'stale':
       return (
         <span className="tag muted-tag" title={t('staleHint')}>
